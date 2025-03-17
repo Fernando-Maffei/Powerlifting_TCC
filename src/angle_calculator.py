@@ -2,6 +2,8 @@ import cv2
 import mediapipe as mp
 import numpy as np
 from sklearn.preprocessing import StandardScaler
+import os
+
 
 def calculate_angle(a, b, c):
     """Calcula o ângulo entre três pontos."""
@@ -16,6 +18,7 @@ def calculate_angle(a, b, c):
     angle = np.arccos(np.clip(cosine_angle, -1.0, 1.0))
 
     return np.degrees(angle)
+
 
 def extract_keypoints(landmarks):
     """Extrai keypoints e calcula ângulos relevantes."""
@@ -36,60 +39,51 @@ def extract_keypoints(landmarks):
 
     return keypoints
 
-def validate_squat(keypoints):
-    """Valida o agachamento com base nos ângulos."""
-    angulo_joelho = keypoints[-1]  # Último elemento é o ângulo do joelho
-    return angulo_joelho < 90  # Verifica se o joelho está abaixo do paralelo
-
-def validate_deadlift(keypoints):
-    """Valida o levantamento terra com base nos ângulos."""
-    quadril = (keypoints[mp.solutions.pose.PoseLandmark.LEFT_HIP.value * 3],
-               keypoints[mp.solutions.pose.PoseLandmark.LEFT_HIP.value * 3 + 1])
-    joelho = (keypoints[mp.solutions.pose.PoseLandmark.LEFT_KNEE.value * 3],
-              keypoints[mp.solutions.pose.PoseLandmark.LEFT_KNEE.value * 3 + 1])
-    ombro = (keypoints[mp.solutions.pose.PoseLandmark.LEFT_SHOULDER.value * 3],
-             keypoints[mp.solutions.pose.PoseLandmark.LEFT_SHOULDER.value * 3 + 1])
-
-    angulo_quadril = calculate_angle(joelho, quadril, ombro)
-    return angulo_quadril > 170  # Verifica se os quadris estão estendidos
 
 # Inicialização do MediaPipe Pose
 mp_pose = mp.solutions.pose
 pose = mp_pose.Pose()
-cap = cv2.VideoCapture("video.mp4")
 
+# Pasta raiz onde os vídeos estão armazenados
+pasta_raiz = "dataset/Exercicios"
+
+# Lista para armazenar todos os dados extraídos
 data = []
-while cap.isOpened():
-    ret, frame = cap.read()
-    if not ret:
-        break
 
-    frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-    result = pose.process(frame_rgb)
+# Percorre todos os vídeos na pasta raiz e subpastas
+for root, _, files in os.walk(pasta_raiz):
+    for file in files:
+        if file.endswith(".mp4"):
+            video_path = os.path.join(root, file)
+            print(f"Processando vídeo: {video_path}")
 
-    if result.pose_landmarks:
-        keypoints = extract_keypoints(result.pose_landmarks.landmark)
-        data.append(keypoints)
+            # Abre o vídeo
+            cap = cv2.VideoCapture(video_path)
+            if not cap.isOpened():
+                print(f"Erro ao abrir o vídeo: {video_path}")
+                continue
 
-        # Validação do agachamento
-        if validate_squat(keypoints):
-            cv2.putText(frame, "Squat Valido", (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
-        else:
-            cv2.putText(frame, "Squat Invalido", (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
+            # Processa cada frame do vídeo
+            while cap.isOpened():
+                ret, frame = cap.read()
+                if not ret:
+                    break
 
-        # Validação do levantamento terra
-        if validate_deadlift(keypoints):
-            cv2.putText(frame, "Deadlift Valido", (50, 100), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
-        else:
-            cv2.putText(frame, "Deadlift Invalido", (50, 100), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
+                frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                result = pose.process(frame_rgb)
 
-    cv2.imshow("Frame", frame)
-    if cv2.waitKey(10) & 0xFF == ord('q'):
-        break
+                if result.pose_landmarks:
+                    keypoints = extract_keypoints(
+                        result.pose_landmarks.landmark)
+                    data.append(keypoints)
 
-cap.release()
-cv2.destroyAllWindows()
+            cap.release()
 
-data = np.array(data)
-scaler = StandardScaler()
-data_scaled = scaler.fit_transform(data)
+# Verifica se há dados antes de aplicar o StandardScaler
+if data:
+    data = np.array(data)
+    scaler = StandardScaler()
+    data_scaled = scaler.fit_transform(data)
+    print("Dados normalizados com sucesso.")
+else:
+    print("Nenhum dado foi extraído. Verifique os vídeos ou a detecção de poses.")

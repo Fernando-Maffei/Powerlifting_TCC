@@ -3,20 +3,69 @@ import mediapipe as mp
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 from PIL import Image, ImageTk
+import numpy as np
 import joblib
+from angle_calculator import calculate_angle
 
 mp_drawing = mp.solutions.drawing_utils
 mp_drawing_styles = mp.solutions.drawing_styles
 
 
+class PoseDetector:
+    def __init__(self, model_paths):
+        """
+        Inicializa o detector de poses com modelos para diferentes movimentos.
+        """
+        self.models = {
+            "Agachamento": joblib.load(model_paths["Agachamento"]),
+            "Supino": joblib.load(model_paths["Supino"]),
+            "Levantamento Terra": joblib.load(model_paths["Levantamento Terra"])
+        }
+        self.pose = mp.solutions.pose.Pose()
+
+    def process_frame(self, frame):
+        """
+        Processa um frame para detectar poses.
+        """
+        frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        results = self.pose.process(frame_rgb)
+        return results
+
+    def classify_movement(self, results, movement_type):
+        """
+        Classifica o movimento com base nos landmarks detectados.
+        """
+        if results.pose_landmarks:
+            landmarks = results.pose_landmarks.landmark
+            if movement_type == "Agachamento":
+                quadril = (landmarks[mp.solutions.pose.PoseLandmark.LEFT_HIP.value].x,
+                           landmarks[mp.solutions.pose.PoseLandmark.LEFT_HIP.value].y)
+                joelho = (landmarks[mp.solutions.pose.PoseLandmark.LEFT_KNEE.value].x,
+                          landmarks[mp.solutions.pose.PoseLandmark.LEFT_KNEE.value].y)
+                tornozelo = (landmarks[mp.solutions.pose.PoseLandmark.LEFT_ANKLE.value].x,
+                             landmarks[mp.solutions.pose.PoseLandmark.LEFT_ANKLE.value].y)
+                angulo_joelho = calculate_angle(quadril, joelho, tornozelo)
+                return angulo_joelho < 90  # Verifica se o joelho está abaixo do paralelo
+            elif movement_type == "Levantamento Terra":
+                quadril = (landmarks[mp.solutions.pose.PoseLandmark.LEFT_HIP.value].x,
+                           landmarks[mp.solutions.pose.PoseLandmark.LEFT_HIP.value].y)
+                joelho = (landmarks[mp.solutions.pose.PoseLandmark.LEFT_KNEE.value].x,
+                          landmarks[mp.solutions.pose.PoseLandmark.LEFT_KNEE.value].y)
+                ombro = (landmarks[mp.solutions.pose.PoseLandmark.LEFT_SHOULDER.value].x,
+                         landmarks[mp.solutions.pose.PoseLandmark.LEFT_SHOULDER.value].y)
+                angulo_quadril = calculate_angle(joelho, quadril, ombro)
+                return angulo_quadril > 170  # Verifica se os quadris estão estendidos
+        return False
+
+
 class PoseDetectionApp:
-    def __init__(self, root, model_path):
+    def __init__(self, root, model_paths):
         """
         Inicializa a aplicação de detecção de poses.
         """
         self.root = root
         self.root.title("Análise de Movimentos - Powerlifting")
-        self.model = joblib.load(model_path)  # Carrega o modelo treinado
+        self.detector = PoseDetector(model_paths)
         self.is_running = False
         self.cap = None
         self.video_path = None
@@ -47,6 +96,11 @@ class PoseDetectionApp:
                 btn.config(state=state[0])
             btn.pack(side=tk.LEFT, padx=5)
             self.button_refs.append(btn)
+
+        self.movement_type = ttk.Combobox(self.button_frame, values=[
+                                          "Agachamento", "Supino", "Levantamento Terra"])
+        self.movement_type.current(0)
+        self.movement_type.pack(side=tk.LEFT, padx=5)
 
         self.result_label = ttk.Label(
             self.root, text="Resultados aparecerão aqui...", font=("Arial", 12))
@@ -115,12 +169,7 @@ class PoseDetectionApp:
             if not ret:
                 self.stop_detection()
                 return
-
-            # Processa o frame para detectar poses
-            frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            results = self.detect_pose(frame_rgb)
-
-            # Desenha os landmarks e exibe o resultado
+            results = self.detector.process_frame(frame)
             annotated_frame, feedback = self.draw_landmarks(frame, results)
             img = ImageTk.PhotoImage(image=Image.fromarray(
                 cv2.cvtColor(annotated_frame, cv2.COLOR_BGR2RGB)))
@@ -128,14 +177,6 @@ class PoseDetectionApp:
             self.video_frame.image = img
             self.result_label.config(text=feedback)
             self.root.after(10, self.update_frame)
-
-    def detect_pose(self, frame):
-        """
-        Detecta poses no frame usando o MediaPipe.
-        """
-        pose = mp.solutions.pose.Pose()
-        results = pose.process(frame)
-        return results
 
     def draw_landmarks(self, image, results):
         """
@@ -145,37 +186,10 @@ class PoseDetectionApp:
         if results.pose_landmarks:
             mp_drawing.draw_landmarks(image, results.pose_landmarks, mp.solutions.pose.POSE_CONNECTIONS,
                                       landmark_drawing_spec=mp_drawing_styles.get_default_pose_landmarks_style())
-            # Classifica o movimento usando o modelo treinado
-            feedback = self.classify_movement(results)
+            movement_type = self.movement_type.get()
+            is_valid = self.detector.classify_movement(results, movement_type)
+            feedback = f"{movement_type}: {'Válido' if is_valid else 'Inválido'}"
         return image, feedback
-
-    def classify_movement(self, results):
-        """
-        Classifica o movimento com base nos landmarks detectados.
-        """
-        if results.pose_landmarks:
-            # Extrai os keypoints
-            keypoints = []
-            for landmark in results.pose_landmarks.landmark:
-                keypoints.extend([landmark.x, landmark.y, landmark.z])
-
-            # Verifica se o número de keypoints está correto
-            expected_features = 20  # Número de features esperadas pelo modelo
-            if len(keypoints) < expected_features:
-                # Preenche com zeros se faltarem keypoints
-                keypoints += [0] * (expected_features - len(keypoints))
-            elif len(keypoints) > expected_features:
-                # Remove keypoints extras se houver mais do que o esperado
-                keypoints = keypoints[:expected_features]
-
-            try:
-                # Faz a previsão usando o modelo treinado
-                prediction = self.model.predict([keypoints])
-                return "Correto" if prediction[0] == 1 else "Errado"
-            except Exception as e:
-                print(f"Erro ao classificar movimento: {e}")
-                return "Erro na classificação"
-        return "Aguardando detecção..."
 
     def toggle_buttons(self, enable_start, enable_stop):
         """
@@ -206,7 +220,11 @@ class PoseDetectionApp:
 
 
 if __name__ == "__main__":
-    MODEL_PATH = "models/classificador_movimentos.pkl"
+    MODEL_PATHS = {
+        "Agachamento": "models/classificador_agachamento.pkl",
+        "Supino": "models/classificador_supino.pkl",
+        "Levantamento Terra": "models/classificador_levantamento_terra.pkl"
+    }
     root = tk.Tk()
-    app = PoseDetectionApp(root, MODEL_PATH)
+    app = PoseDetectionApp(root, MODEL_PATHS)
     app.run()

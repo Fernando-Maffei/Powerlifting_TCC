@@ -1,0 +1,15 @@
+Acurácia do modelo no conjunto de teste: 0.0328
+
+Relatório de Classificação:
+              precision    recall  f1-score   support
+
+           0       1.00      0.03      0.06      1462
+           1       0.00      0.00      0.00         0
+
+    accuracy                           0.03      1462
+   macro avg       0.50      0.02      0.03      1462
+weighted avg       1.00      0.03      0.06      1462
+
+Matriz de Confusão:
+[[  48 1414]
+ [   0    0]]

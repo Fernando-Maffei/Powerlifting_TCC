@@ -3,7 +3,7 @@ import pandas as pd
 from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
 import matplotlib.pyplot as plt
 import seaborn as sns
-
+import os  # Adicionado para criar o diretório
 
 def evaluate_model(model_path, data_path, output_path="results/evaluation_results.txt"):
     """
@@ -28,8 +28,7 @@ def evaluate_model(model_path, data_path, output_path="results/evaluation_result
     accuracy = accuracy_score(y_test, y_pred)
     print(f"Acurácia do modelo no conjunto de teste: {accuracy:.4f}")
     print("\nRelatório de Classificação:")
-    # Evita warnings de divisão por zero
-    report = classification_report(y_test, y_pred, zero_division=0)
+    report = classification_report(y_test, y_pred, zero_division=0)  # Evita warnings de divisão por zero
     print(report)
 
     # Matriz de Confusão
@@ -39,11 +38,15 @@ def evaluate_model(model_path, data_path, output_path="results/evaluation_result
 
     # Visualização da Matriz de Confusão
     plt.figure(figsize=(8, 6))
-    sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', xticklabels=[
-                'Incorreto', 'Correto'], yticklabels=['Incorreto', 'Correto'])
+    sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', xticklabels=['Incorreto', 'Correto'], yticklabels=['Incorreto', 'Correto'])
     plt.xlabel('Predito')
     plt.ylabel('Real')
     plt.title('Matriz de Confusão')
+
+    # Cria o diretório "results" se ele não existir
+    os.makedirs("results", exist_ok=True)
+
+    # Salva a matriz de confusão como uma imagem
     plt.savefig("results/confusion_matrix.png")
     plt.show()
 
@@ -54,7 +57,6 @@ def evaluate_model(model_path, data_path, output_path="results/evaluation_result
         f.write(report)
         f.write("\nMatriz de Confusão:\n")
         f.write(str(cm))
-
 
 if __name__ == "__main__":
     evaluate_model("models/classificador_movimentos.pkl",
