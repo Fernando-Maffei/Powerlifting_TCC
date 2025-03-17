@@ -1,0 +1,8 @@
+Guia de detecção de pontos de referência de poses
+https://ai.google.dev/edge/mediapipe/solutions/vision/pose_landmarker?hl=pt-br
+
+MediaPipe Pose
+https://github.com/google-ai-edge/mediapipe/blob/master/docs/solutions/pose.md
+
+Powerlifting Database
+https://www.kaggle.com/datasets/open-powerlifting/powerlifting-database?resource=download

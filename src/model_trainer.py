@@ -1,0 +1,104 @@
+import joblib
+import pandas as pd
+import numpy as np
+from sklearn.model_selection import train_test_split
+from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
+from sklearn.svm import SVC
+from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
+from sklearn.preprocessing import StandardScaler
+
+
+def train_model(data_path, iterations=10, save_path="models/classificador_movimentos.pkl"):
+    """
+    Treina um modelo de classificação usando múltiplos algoritmos com validação cruzada.
+    """
+    df = pd.read_parquet(data_path)
+    X = df.drop(columns=["exercicio", "correto"])
+    y = df["correto"]
+
+    # Verificar se há apenas uma classe no conjunto de dados
+    if len(y.unique()) == 1:
+        print("Aviso: O conjunto de dados contém apenas uma classe. Adicionando dados sintéticos para a classe faltante...")
+        # Duplica os dados existentes e inverte a classe
+        X_synthetic = X.copy()
+        y_synthetic = 1 - y  # Inverte a classe (0 -> 1, 1 -> 0)
+        X = pd.concat([X, X_synthetic])
+        y = pd.concat([y, y_synthetic])
+
+    # Verificar e tratar valores NaN
+    if X.isnull().any().any():
+        print("Valores NaN encontrados no conjunto de dados. Preenchendo com zeros...")
+        X = X.fillna(0)  # Preenche valores NaN com zeros
+
+    # Normalização dos dados
+    scaler = StandardScaler()
+    X = scaler.fit_transform(X)
+
+    best_model = None
+    best_accuracy = 0
+    best_model_name = ""
+
+    modelos = {
+        "RandomForest": RandomForestClassifier(n_estimators=100, random_state=42),
+        "GradientBoosting": GradientBoostingClassifier(n_estimators=100, random_state=42),
+        "SVM": SVC(kernel='linear', random_state=42)
+    }
+
+    for model_name, modelo in modelos.items():
+        print(f"Treinando modelo: {model_name}")
+        accuracy_scores = []
+        precision_scores = []
+        recall_scores = []
+        f1_scores = []
+
+        for i in range(iterations):
+            print(f"Iteração {i+1}/{iterations}...")
+            X_train, X_test, y_train, y_test = train_test_split(
+                X, y, test_size=0.2, random_state=i)
+            modelo.fit(X_train, y_train)
+
+            y_pred = modelo.predict(X_test)
+            accuracy = accuracy_score(y_test, y_pred)
+            # Evita warnings de divisão por zero
+            precision = precision_score(y_test, y_pred, zero_division=0)
+            # Evita warnings de divisão por zero
+            recall = recall_score(y_test, y_pred, zero_division=0)
+            # Evita warnings de divisão por zero
+            f1 = f1_score(y_test, y_pred, zero_division=0)
+
+            accuracy_scores.append(accuracy)
+            precision_scores.append(precision)
+            recall_scores.append(recall)
+            f1_scores.append(f1)
+
+            print(f"Acurácia da iteração {i+1}: {accuracy:.4f}")
+            print(f"Precisão da iteração {i+1}: {precision:.4f}")
+            print(f"Recall da iteração {i+1}: {recall:.4f}")
+            print(f"F1-score da iteração {i+1}: {f1:.4f}")
+
+        avg_accuracy = np.mean(accuracy_scores)
+        avg_precision = np.mean(precision_scores)
+        avg_recall = np.mean(recall_scores)
+        avg_f1 = np.mean(f1_scores)
+
+        print(f"Médias para {model_name}:")
+        print(f"Acurácia média: {avg_accuracy:.4f}")
+        print(f"Precisão média: {avg_precision:.4f}")
+        print(f"Recall médio: {avg_recall:.4f}")
+        print(f"F1-score médio: {avg_f1:.4f}")
+
+        if avg_accuracy > best_accuracy:
+            best_accuracy = avg_accuracy
+            best_model = modelo
+            best_model_name = model_name
+
+    if best_model:
+        joblib.dump(best_model, save_path)
+        print(
+            f"Melhor modelo ({best_model_name}) salvo com acurácia média de {best_accuracy:.4f} em {save_path}")
+    else:
+        print("Nenhum modelo treinado corretamente.")
+
+
+if __name__ == "__main__":
+    train_model("dataset/processed/keypoints_data.parquet")
